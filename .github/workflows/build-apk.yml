@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+
+      - name: Verify Node runtime
+        run: |
+          node -v
+          npm -v
+          which node
 
       - name: Install dependencies
         run: npm install
@@ -39,7 +47,7 @@ jobs:
       - name: Build with Gradle
         run: |
           cd android
-          ./gradlew assembleRelease
+          NODE_BINARY=$(which node) ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
