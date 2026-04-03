@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Keyboard
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc } from 'firebase/firestore';
+import { sendPushToOthers } from '../utils/push-notifications';
 
 export default function ChatScreen({ route }) {
   const [messages, setMessages] = useState([]);
@@ -63,12 +64,20 @@ export default function ChatScreen({ route }) {
 
   const sendMessage = async () => {
     if (newMessage.trim() === '') return;
+    const textToSend = newMessage.trim();
     
     await addDoc(collection(db, 'family_chat'), {
-      text: newMessage,
+      text: textToSend,
       sender: senderName,
       isAdmin: isAdmin,
       createdAt: serverTimestamp()
+    });
+
+    await sendPushToOthers(db, {
+      title: `New Message from ${senderName}`,
+      body: textToSend,
+      excludeEmail: email,
+      data: { type: 'chat' },
     });
     
     setNewMessage('');

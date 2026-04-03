@@ -26,9 +26,11 @@ import ChatScreen from './screens/ChatScreen';
 import LoginScreen from './screens/LoginScreen';
 import MapScreen from './screens/MapScreen';
 import TimelineScreen from './screens/TimelineScreen';
+import { registerPushToken } from './utils/push-notifications';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const ADMIN_EMAIL = 'bmohanbalaji1976@gmail.com';
 
 // Universal Unread Hook
 function useUnreadMessages(email) {
@@ -148,6 +150,11 @@ function ParentTabs({ route, navigation }) {
   const { unread, setUnread } = useUnreadMessages(email);
   useTimelineNotifications(email); // Active Timeline Listener
 
+  useEffect(() => {
+    if (!email) return;
+    registerPushToken(db, email, 'parent');
+  }, [email]);
+
   // Clear unread count when focusing on the tab navigator Chat screen
   useEffect(() => {
     const unsubscribe = navigation.addListener('state', (e) => {
@@ -203,6 +210,11 @@ function AdminTabs({ route, navigation }) {
   const { unread, setUnread } = useUnreadMessages(email);
 
   useEffect(() => {
+    if (!email) return;
+    registerPushToken(db, email, 'admin');
+  }, [email]);
+
+  useEffect(() => {
     const unsubscribe = navigation.addListener('state', (e) => {
       const state = e.data.state;
       if (state) {
@@ -251,16 +263,43 @@ function AdminTabs({ route, navigation }) {
 }
 
 export default function App() {
+  const [bootState, setBootState] = useState({
+    ready: false,
+    initialRoute: 'Login',
+    email: null,
+  });
+
+  useEffect(() => {
+    const hydrateSession = async () => {
+      try {
+        const savedEmail = await AsyncStorage.getItem('sessionEmail');
+        if (savedEmail) {
+          const normalizedEmail = savedEmail.toLowerCase().trim();
+          const initialRoute = normalizedEmail === ADMIN_EMAIL ? 'AdminRoot' : 'ParentRoot';
+          setBootState({ ready: true, initialRoute, email: normalizedEmail });
+          return;
+        }
+      } catch (err) {
+        // Fall through to Login on read errors.
+      }
+      setBootState({ ready: true, initialRoute: 'Login', email: null });
+    };
+
+    hydrateSession();
+  }, []);
+
+  if (!bootState.ready) return null;
+
   return (
     <NavigationContainer>
       <Stack.Navigator 
-        initialRouteName="Login"
+        initialRouteName={bootState.initialRoute}
         screenOptions={{ headerShown: false }}
       >
         <Stack.Screen name="Login" component={LoginScreen} />
         {/* Pass the routing to the unified Tab containers */}
-        <Stack.Screen name="ParentRoot" component={ParentTabs} />
-        <Stack.Screen name="AdminRoot" component={AdminTabs} />
+        <Stack.Screen name="ParentRoot" component={ParentTabs} initialParams={{ email: bootState.email }} />
+        <Stack.Screen name="AdminRoot" component={AdminTabs} initialParams={{ email: bootState.email }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -8,9 +8,10 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
+import { sendPushToRole } from '../utils/push-notifications';
 
 const CHECKPOINTS = [
   { id: 1, title: "Woke up", expected: "6:30 AM", icon: "🌅" },
@@ -34,6 +35,8 @@ export default function AdminScreen({ navigation }) {
   const [logNotes, setLogNotes] = useState({});
   const [activeEditId, setActiveEditId] = useState(null);
   const [editNoteText, setEditNoteText] = useState('');
+  const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+  const [logoutConfirmText, setLogoutConfirmText] = useState('');
 
   // We use the current date so it automatically resets every true morning to a fresh timeline!
   const todayDate = new Date().toISOString().split('T')[0];
@@ -252,14 +255,25 @@ export default function AdminScreen({ navigation }) {
           text: 'Yes',
           onPress: async () => {
             try {
-              await Notifications.scheduleNotificationAsync({
-                content: {
-                  title: "✅ Timeline Update",
-                  body: notificationMessage,
-                  sound: true,
-                },
-                trigger: null,
+              const sent = await sendPushToRole(db, {
+                role: 'parent',
+                title: '✅ Timeline Update',
+                body: notificationMessage,
+                excludeEmail: 'bmohanbalaji1976@gmail.com',
+                data: { type: 'timeline', checkpointId: cpId },
               });
+
+              if (!sent) {
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: '✅ Timeline Update',
+                    body: notificationMessage,
+                    sound: true,
+                  },
+                  trigger: null,
+                });
+              }
+
               Alert.alert('✅ Sent', `Notification sent for ${checkpoint.title}`);
             } catch (err) {
               console.error("Notification Error:", err);
@@ -273,6 +287,17 @@ export default function AdminScreen({ navigation }) {
     );
   };
 
+  const handleLogout = async () => {
+    if (logoutConfirmText.trim().toUpperCase() !== 'YES') {
+      Alert.alert('Confirmation Required', 'Type YES to confirm logout.');
+      return;
+    }
+    await AsyncStorage.removeItem('sessionEmail');
+    setIsLogoutModalVisible(false);
+    setLogoutConfirmText('');
+    navigation.replace('Login');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -281,7 +306,7 @@ export default function AdminScreen({ navigation }) {
           <Text style={styles.dateText}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
           <Text style={styles.headerTitle}>My Dashboard</Text>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => navigation.replace('Login')}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => setIsLogoutModalVisible(true)}>
           <Text style={styles.logoutText}>Exit</Text>
         </TouchableOpacity>
       </View>
@@ -409,6 +434,42 @@ export default function AdminScreen({ navigation }) {
       </ScrollView>
         )}
       </View>
+
+      <Modal
+        visible={isLogoutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsLogoutModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.logoutModalCard}>
+            <Text style={styles.logoutModalTitle}>Confirm Logout</Text>
+            <Text style={styles.logoutModalHint}>Type YES, then tap Yes to logout.</Text>
+            <TextInput
+              style={styles.logoutInput}
+              placeholder="Type YES"
+              placeholderTextColor="#64748B"
+              autoCapitalize="characters"
+              value={logoutConfirmText}
+              onChangeText={setLogoutConfirmText}
+            />
+            <View style={styles.logoutActionsRow}>
+              <TouchableOpacity
+                style={styles.logoutNoBtn}
+                onPress={() => {
+                  setIsLogoutModalVisible(false);
+                  setLogoutConfirmText('');
+                }}
+              >
+                <Text style={styles.logoutNoText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.logoutYesBtn} onPress={handleLogout}>
+                <Text style={styles.logoutYesText}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -464,5 +525,16 @@ const styles = StyleSheet.create({
   inlineEditBlock: { paddingHorizontal: 16, paddingBottom: 16, flexDirection: 'row', alignItems: 'center' },
   inlineEditInput: { flex: 1, backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155', borderRadius: 12, color: '#FFF', padding: 10, marginRight: 10 },
   saveNoteBtn: { backgroundColor: '#3B82F6', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12 },
-  saveNoteText: { color: '#FFFFFF', fontWeight: 'bold' }
+  saveNoteText: { color: '#FFFFFF', fontWeight: 'bold' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(2, 6, 23, 0.75)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  logoutModalCard: { width: '100%', backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 18 },
+  logoutModalTitle: { color: '#F8FAFC', fontWeight: 'bold', fontSize: 18, marginBottom: 8 },
+  logoutModalHint: { color: '#94A3B8', fontSize: 13, marginBottom: 12 },
+  logoutInput: { backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155', borderRadius: 12, padding: 12, color: '#FFFFFF', marginBottom: 14 },
+  logoutActionsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
+  logoutNoBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, borderColor: '#334155', marginRight: 10 },
+  logoutNoText: { color: '#CBD5E1', fontWeight: '600' },
+  logoutYesBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.45)' },
+  logoutYesText: { color: '#F87171', fontWeight: '700' }
 });
