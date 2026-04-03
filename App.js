@@ -81,6 +81,7 @@ function useTimelineNotifications(email) {
 
     let previousLogs = [];
     let previousNotes = {};
+    let previousManualId = null;
     let isFirstLoad = true;
 
     const todayDate = new Date().toISOString().split('T')[0];
@@ -96,10 +97,12 @@ function useTimelineNotifications(email) {
       const data = docSnapshot.data();
       const newLogs = data.logs || [];
       const newNotes = data.logNotes || {};
+      const manualNotification = data.manualNotification || null;
 
       if (isFirstLoad) {
         previousLogs = newLogs;
         previousNotes = newNotes;
+        previousManualId = manualNotification?.id || null;
         isFirstLoad = false;
         return;
       }
@@ -136,8 +139,25 @@ function useTimelineNotifications(email) {
         }
       });
 
+      // Manual admin-triggered notification event fallback.
+      if (
+        manualNotification?.id &&
+        manualNotification?.message &&
+        previousManualId !== manualNotification.id
+      ) {
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🔔 Admin Update',
+            body: manualNotification.message,
+            sound: true,
+          },
+          trigger: null,
+        });
+      }
+
       previousLogs = newLogs;
       previousNotes = newNotes;
+      previousManualId = manualNotification?.id || previousManualId;
     });
 
     return () => unsub();

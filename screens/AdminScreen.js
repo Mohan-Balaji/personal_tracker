@@ -274,6 +274,20 @@ export default function AdminScreen({ navigation }) {
                 });
               }
 
+              await setDoc(
+                doc(db, 'users', ADMIN_DOC),
+                {
+                  manualNotification: {
+                    id: `${Date.now()}`,
+                    message: notificationMessage,
+                    by: 'Mohan',
+                    createdAt: new Date().toISOString(),
+                  },
+                  timestamp: new Date().toISOString(),
+                },
+                { merge: true }
+              );
+
               Alert.alert('✅ Sent', `Notification sent for ${checkpoint.title}`);
             } catch (err) {
               console.error("Notification Error:", err);
