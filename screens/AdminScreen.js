@@ -12,6 +12,8 @@ import { Alert, Modal, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
 import { sendPushToRole } from '../utils/push-notifications';
+import { formatCompletedTime, getTimelineDateKey } from '../utils/timeline-date';
+import { useAppTheme } from '../utils/theme-context';
 
 const CHECKPOINTS = [
   { id: 1, title: "Woke up", expected: "6:30 AM", icon: "🌅" },
@@ -22,6 +24,7 @@ const CHECKPOINTS = [
   { id: 6, title: "Evening Snack", expected: "4:30 PM", icon: "☕" },
   { id: 7, title: "Left office", expected: "6:30 PM", icon: "🏃" },
   { id: 8, title: "Reached home", expected: "7:15 PM", icon: "🏠" },
+  { id: 9, title: "Sleep", expected: "10:30 PM", icon: "🌙" },
 ];
 
 export default function AdminScreen({ navigation }) {
@@ -35,11 +38,13 @@ export default function AdminScreen({ navigation }) {
   const [logNotes, setLogNotes] = useState({});
   const [activeEditId, setActiveEditId] = useState(null);
   const [editNoteText, setEditNoteText] = useState('');
+  const [pendingCompletion, setPendingCompletion] = useState(null);
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
   const [logoutConfirmText, setLogoutConfirmText] = useState('');
+  const { themeMode: appThemeMode, setAppThemeMode } = useAppTheme();
 
   // We use the current date so it automatically resets every true morning to a fresh timeline!
-  const todayDate = new Date().toISOString().split('T')[0];
+  const todayDate = getTimelineDateKey();
   const ADMIN_DOC = `mohan_${todayDate}`;
 
   useEffect(() => {
@@ -140,6 +145,25 @@ export default function AdminScreen({ navigation }) {
     };
   }, []);
 
+  const toggleThemeMode = async () => {
+    const next = appThemeMode === 'dark' ? 'light' : 'dark';
+    await setAppThemeMode(next);
+  };
+
+  const isDark = appThemeMode === 'dark';
+  const theme = {
+    screenBg: isDark ? '#0F172A' : '#F2F2F7',
+    headerTitle: isDark ? '#FFFFFF' : '#1C1C1E',
+    subtitle: isDark ? '#94A3B8' : '#6E6E73',
+    cardBg: isDark ? '#1E293B' : '#FFFFFF',
+    cardBorder: isDark ? '#334155' : '#E5E5EA',
+    text: isDark ? '#FFFFFF' : '#1C1C1E',
+    inputBg: isDark ? '#0F172A' : '#F7F7FA',
+    inputBorder: isDark ? '#334155' : '#D1D1D6',
+    inputText: isDark ? '#FFFFFF' : '#1C1C1E',
+    rail: isDark ? '#334155' : '#D1D1D6',
+  };
+
   const handleLog = async (id) => {
     if (logs.includes(id)) {
       Alert.alert(
@@ -172,21 +196,83 @@ export default function AdminScreen({ navigation }) {
       );
       return;
     }
-    
-    const newLogs = [...logs, id];
-    const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newTimes = { ...logTimes, [id]: timeNow };
 
-    setLogs(newLogs); // Instant ui update
+    const checkpoint = CHECKPOINTS.find(cp => cp.id === id);
+    const checkpointTitle = checkpoint?.title || 'this checkpoint';
+
+    Alert.alert(
+      'Confirm Timeline Update',
+      `Mark ${checkpointTitle} as completed?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Add Note',
+          onPress: () => {
+            setPendingCompletion({
+              id,
+              title: checkpointTitle,
+              note: logNotes[id] || '',
+            });
+          },
+        },
+        {
+          text: 'No Note',
+          onPress: async () => {
+            await completeCheckpoint(id, checkpointTitle, '');
+          },
+        },
+      ]
+    );
+  };
+
+  const completeCheckpoint = async (id, checkpointTitle, noteText) => {
+    const trimmedNote = noteText.trim();
+    const newLogs = [...logs, id];
+    const timeNow = formatCompletedTime();
+    const newTimes = { ...logTimes, [id]: timeNow };
+    const newNotes = trimmedNote ? { ...logNotes, [id]: trimmedNote } : logNotes;
+    const noteSuffix = trimmedNote ? `\n📝 "${trimmedNote}"` : '';
+    const notificationMessage = `Mohan marked: ${checkpointTitle}${noteSuffix}`;
+
+    setLogs(newLogs);
     setLogTimes(newTimes);
-    
+    if (trimmedNote) setLogNotes(newNotes);
+
     try {
-      await setDoc(doc(db, "users", ADMIN_DOC), { 
+      await setDoc(doc(db, "users", ADMIN_DOC), {
         logs: newLogs,
         logTimes: newTimes,
+        logNotes: trimmedNote ? newNotes : logNotes,
         locationSharing: isSharingLocation,
+        manualNotification: {
+          id: `${Date.now()}`,
+          message: notificationMessage,
+          by: 'Mohan',
+          createdAt: new Date().toISOString(),
+        },
         timestamp: new Date().toISOString()
       }, { merge: true });
+
+      const sent = await sendPushToRole(db, {
+        role: 'parent',
+        title: '✅ Timeline Update',
+        body: notificationMessage,
+        excludeEmail: 'bmohanbalaji1976@gmail.com',
+        data: { type: 'timeline', checkpointId: id },
+      });
+
+      if (!sent) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: '✅ Timeline Update',
+            body: notificationMessage,
+            sound: true,
+          },
+          trigger: null,
+        });
+      }
+
+      Alert.alert('✅ Updated', `${checkpointTitle} completed${trimmedNote ? ' with note' : ''}.`);
     } catch (err) {
       console.error("Firebase Save Error:", err);
       alert("Error saving! Check if your Firestore database was created in the console.");
@@ -313,16 +399,21 @@ export default function AdminScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.screenBg }]}> 
       <StatusBar barStyle="light-content" />
       <View style={styles.header}>
         <View>
           <Text style={styles.dateText}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
-          <Text style={styles.headerTitle}>My Dashboard</Text>
+          <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>My Dashboard</Text>
         </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => setIsLogoutModalVisible(true)}>
-          <Text style={styles.logoutText}>Exit</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.themeBtn} onPress={toggleThemeMode}>
+            <Text style={styles.themeBtnText}>{appThemeMode === 'dark' ? 'Light' : 'Dark'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutBtn} onPress={() => setIsLogoutModalVisible(true)}>
+            <Text style={styles.logoutText}>Exit</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -331,10 +422,10 @@ export default function AdminScreen({ navigation }) {
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.timelineScroll}>
             {/* Privacy Toggle Widget */}
-            <View style={styles.privacyCard}>
+            <View style={[styles.privacyCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}> 
               <View style={styles.privacyTextWrapper}>
-                <Text style={styles.privacyTitle}>Live Location Privacy</Text>
-                <Text style={styles.privacySubtitle}>
+                <Text style={[styles.privacyTitle, { color: theme.text }]}>Live Location Privacy</Text>
+                <Text style={[styles.privacySubtitle, { color: theme.subtitle }]}>
                   {isSharingLocation ? "Your parents can track your location." : "Location hidden for privacy."}
                 </Text>
               </View>
@@ -347,14 +438,14 @@ export default function AdminScreen({ navigation }) {
             </View>
 
             {/* Custom Status Broadcaster */}
-            <View style={styles.statusBroadcastCard}>
-              <Text style={styles.broadcastTitle}>Broadcast Current Activity</Text>
+            <View style={[styles.statusBroadcastCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}> 
+              <Text style={[styles.broadcastTitle, { color: theme.text }]}>Broadcast Current Activity</Text>
               {activeCustomStatus ? (
                 <Text style={styles.activeStatusDisplay}>Currently: "{activeCustomStatus}"</Text>
               ) : null}
               <View style={styles.broadcastInputRow}>
                 <TextInput 
-                  style={styles.statusInput}
+                  style={[styles.statusInput, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.inputText }]}
                   placeholder="E.g. In meeting, learning..."
                   placeholderTextColor="#64748B"
                   value={customStatusInput}
@@ -366,7 +457,7 @@ export default function AdminScreen({ navigation }) {
               </View>
             </View>
 
-            <Text style={styles.sectionTitle}>Log Your Day</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Log Your Day</Text>
             {CHECKPOINTS.map((cp, index) => {
           const isLogged = logs.includes(cp.id);
           const isNext = !isLogged && (index === 0 || logs.includes(CHECKPOINTS[index-1].id));
@@ -376,12 +467,13 @@ export default function AdminScreen({ navigation }) {
               <View style={styles.timelineLineContainer}>
                 <View style={[styles.timelineDot, isLogged ? styles.dotLogged : (isNext ? styles.dotNext : null)]} />
                 {index !== CHECKPOINTS.length - 1 && (
-                  <View style={[styles.timelineLine, isLogged ? styles.lineLogged : null]} />
+                  <View style={[styles.timelineLine, { backgroundColor: theme.rail }, isLogged ? styles.lineLogged : null]} />
                 )}
               </View>
 
               <View style={[
-                styles.checkpointCardWrapper, 
+                styles.checkpointCardWrapper,
+                { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
                 isLogged && styles.cardLogged,
                 isNext && styles.cardNext
               ]}>
@@ -394,8 +486,8 @@ export default function AdminScreen({ navigation }) {
                     <Text style={styles.cpIcon}>{cp.icon}</Text>
                   </View>
                   <View style={styles.cpTextWrapper}>
-                    <Text style={[styles.cpTitle, isLogged ? styles.textLogged : null]}>{cp.title}</Text>
-                    <Text style={styles.cpTime}>Expected: {cp.expected}</Text>
+                    <Text style={[styles.cpTitle, { color: theme.text }, isLogged ? styles.textLogged : null]}>{cp.title}</Text>
+                    <Text style={[styles.cpTime, { color: theme.subtitle }]}>Expected: {cp.expected}</Text>
                     {logNotes[cp.id] ? (
                       <Text style={styles.noteDisplay}>"{logNotes[cp.id]}"</Text>
                     ) : null}
@@ -428,7 +520,7 @@ export default function AdminScreen({ navigation }) {
                 {activeEditId === cp.id && (
                   <View style={styles.inlineEditBlock}>
                     <TextInput
-                      style={styles.inlineEditInput}
+                      style={[styles.inlineEditInput, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.inputText }]}
                       placeholder="Add a note (e.g. had Biryani)"
                       placeholderTextColor="#64748B"
                       value={editNoteText}
@@ -450,17 +542,57 @@ export default function AdminScreen({ navigation }) {
       </View>
 
       <Modal
+        visible={!!pendingCompletion}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingCompletion(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.noteModalCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}> 
+            <Text style={styles.logoutModalTitle}>Add Completion Note</Text>
+            <Text style={styles.logoutModalHint}>Optional note for {pendingCompletion?.title || 'this checkpoint'}.</Text>
+            <TextInput
+              style={[styles.logoutInput, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.inputText }]}
+              placeholder="Write a note or leave blank"
+              placeholderTextColor="#64748B"
+              value={pendingCompletion?.note || ''}
+              onChangeText={(text) => setPendingCompletion((current) => current ? { ...current, note: text } : current)}
+            />
+            <View style={styles.logoutActionsRow}>
+              <TouchableOpacity
+                style={styles.logoutNoBtn}
+                onPress={() => setPendingCompletion(null)}
+              >
+                <Text style={styles.logoutNoText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutYesBtn}
+                onPress={async () => {
+                  if (!pendingCompletion) return;
+                  const { id, title, note } = pendingCompletion;
+                  setPendingCompletion(null);
+                  await completeCheckpoint(id, title, note || '');
+                }}
+              >
+                <Text style={styles.logoutYesText}>Complete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={isLogoutModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setIsLogoutModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.logoutModalCard}>
+          <View style={[styles.logoutModalCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}> 
             <Text style={styles.logoutModalTitle}>Confirm Logout</Text>
             <Text style={styles.logoutModalHint}>Type YES, then tap Yes to logout.</Text>
             <TextInput
-              style={styles.logoutInput}
+              style={[styles.logoutInput, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.inputText }]}
               placeholder="Type YES"
               placeholderTextColor="#64748B"
               autoCapitalize="characters"
@@ -492,9 +624,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F172A' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 10 },
   dateText: { color: '#94A3B8', fontSize: 14, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
-  headerTitle: { fontSize: 32, fontWeight: 'bold', color: '#FFFFFF' },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF' },
   logoutBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)' },
   logoutText: { color: '#F87171', fontWeight: 'bold', fontSize: 14 },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  themeBtn: { backgroundColor: 'rgba(59, 130, 246, 0.15)', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.35)', marginRight: 6 },
+  themeBtnText: { color: '#93C5FD', fontWeight: '700', fontSize: 13 },
   
   privacyCard: { marginHorizontal: 24, marginTop: 10, padding: 20, backgroundColor: '#1E293B', borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#334155' },
   privacyTextWrapper: { flex: 1, marginRight: 16 },
@@ -543,6 +678,7 @@ const styles = StyleSheet.create({
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(2, 6, 23, 0.75)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   logoutModalCard: { width: '100%', backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 18 },
+  noteModalCard: { width: '100%', backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', borderRadius: 16, padding: 18 },
   logoutModalTitle: { color: '#F8FAFC', fontWeight: 'bold', fontSize: 18, marginBottom: 8 },
   logoutModalHint: { color: '#94A3B8', fontSize: 13, marginBottom: 12 },
   logoutInput: { backgroundColor: '#0F172A', borderWidth: 1, borderColor: '#334155', borderRadius: 12, padding: 12, color: '#FFFFFF', marginBottom: 14 },

@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, Platform, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from './firebaseConfig';
 
 Notifications.setNotificationHandler({
@@ -27,6 +28,8 @@ import LoginScreen from './screens/LoginScreen';
 import MapScreen from './screens/MapScreen';
 import TimelineScreen from './screens/TimelineScreen';
 import { registerPushToken } from './utils/push-notifications';
+import { getTimelineDateKey } from './utils/timeline-date';
+import { ThemeProvider, useAppTheme } from './utils/theme-context';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -84,12 +87,12 @@ function useTimelineNotifications(email) {
     let previousManualId = null;
     let isFirstLoad = true;
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    const todayDate = getTimelineDateKey();
     const ADMIN_DOC = `mohan_${todayDate}`;
 
     const TICKER_DICT = {
       1: "Woke up", 2: "Breakfast", 3: "Left for office", 4: "Reached office",
-      5: "Lunch", 6: "Evening Snack", 7: "Left office", 8: "Reached home"
+      5: "Lunch", 6: "Evening Snack", 7: "Left office", 8: "Reached home", 9: "Sleep"
     };
 
     const unsub = onSnapshot(doc(db, "users", ADMIN_DOC), (docSnapshot) => {
@@ -168,7 +171,16 @@ function useTimelineNotifications(email) {
 function ParentTabs({ route, navigation }) {
   const { email } = route.params || {};
   const { unread, setUnread } = useUnreadMessages(email);
+  const { themeMode } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   useTimelineNotifications(email); // Active Timeline Listener
+
+  const isDark = themeMode === 'dark';
+  const isTablet = width >= 768;
+  const bottomInset = isTablet
+    ? (Platform.OS === 'android' ? Math.max(insets.bottom, 2) : Math.max(insets.bottom, 2))
+    : (Platform.OS === 'android' ? Math.max(insets.bottom, 10) : Math.max(insets.bottom, 8));
 
   useEffect(() => {
     if (!email) return;
@@ -198,13 +210,44 @@ function ParentTabs({ route, navigation }) {
           else if (route.name === 'Chat') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#3B82F6',
-        tabBarInactiveTintColor: '#64748B',
+        tabBarActiveTintColor: isDark ? '#60A5FA' : '#2563EB',
+        tabBarInactiveTintColor: isDark ? '#94A3B8' : '#6B7280',
+        tabBarActiveBackgroundColor: isDark ? 'rgba(96, 165, 250, 0.08)' : '#E8F0FF',
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+        },
+        tabBarIconStyle: {
+          marginTop: 0,
+        },
+        tabBarItemStyle: {
+          borderRadius: 999,
+          marginHorizontal: 4,
+          marginVertical: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingVertical: 2,
+          overflow: 'hidden',
+        },
         tabBarStyle: {
-          backgroundColor: '#1E293B',
-          borderTopColor: '#334155',
-          paddingBottom: 5,
-          paddingTop: 5,
+          marginHorizontal: 12,
+          marginBottom: bottomInset,
+          backgroundColor: isDark ? '#0B1220' : '#F9F9FB',
+          borderTopColor: 'transparent',
+          borderTopWidth: 0,
+          borderWidth: 0.8,
+          borderColor: isDark ? '#243244' : '#D8DEE9',
+          borderRadius: 28,
+          overflow: 'hidden',
+          paddingBottom: (Platform.OS === 'ios' ? 8 : 6) + Math.floor(bottomInset / 4),
+          paddingTop: 7,
+          height: (Platform.OS === 'ios' ? 70 : 64) + Math.floor(bottomInset / 3),
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.1,
+          shadowRadius: 14,
+          elevation: 10,
         }
       })}
     >
@@ -228,6 +271,15 @@ function ParentTabs({ route, navigation }) {
 function AdminTabs({ route, navigation }) {
   const { email } = route.params || {};
   const { unread, setUnread } = useUnreadMessages(email);
+  const { themeMode } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  const isDark = themeMode === 'dark';
+  const isTablet = width >= 768;
+  const bottomInset = isTablet
+    ? (Platform.OS === 'android' ? Math.max(insets.bottom, 2) : Math.max(insets.bottom, 2))
+    : (Platform.OS === 'android' ? Math.max(insets.bottom, 10) : Math.max(insets.bottom, 8));
 
   useEffect(() => {
     if (!email) return;
@@ -256,13 +308,41 @@ function AdminTabs({ route, navigation }) {
           else if (route.name === 'Chat') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#10B981', // Green for Admin vibe
-        tabBarInactiveTintColor: '#64748B',
+        tabBarActiveTintColor: isDark ? '#34D399' : '#059669',
+        tabBarInactiveTintColor: isDark ? '#94A3B8' : '#6B7280',
+        tabBarActiveBackgroundColor: isDark ? 'rgba(52, 211, 153, 0.08)' : '#E6FBF2',
+        tabBarHideOnKeyboard: true,
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '600',
+        },
+        tabBarItemStyle: {
+          borderRadius: 999,
+          marginHorizontal: 4,
+          marginVertical: 6,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingVertical: 2,
+          overflow: 'hidden',
+        },
         tabBarStyle: {
-          backgroundColor: '#1E293B',
-          borderTopColor: '#334155',
-          paddingBottom: 5,
-          paddingTop: 5,
+          marginHorizontal: 12,
+          marginBottom: bottomInset,
+          backgroundColor: isDark ? '#0B1220' : '#F9F9FB',
+          borderTopColor: 'transparent',
+          borderTopWidth: 0,
+          borderWidth: 0.8,
+          borderColor: isDark ? '#243244' : '#D8DEE9',
+          borderRadius: 28,
+          overflow: 'hidden',
+          paddingBottom: (Platform.OS === 'ios' ? 8 : 6) + Math.floor(bottomInset / 4),
+          paddingTop: 7,
+          height: (Platform.OS === 'ios' ? 68 : 62) + Math.floor(bottomInset / 3),
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.1,
+          shadowRadius: 14,
+          elevation: 10,
         }
       })}
     >
@@ -283,11 +363,32 @@ function AdminTabs({ route, navigation }) {
 }
 
 export default function App() {
+  const [themeMode, setThemeMode] = useState('dark');
   const [bootState, setBootState] = useState({
     ready: false,
     initialRoute: 'Login',
     email: null,
   });
+
+  useEffect(() => {
+    const hydrateTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem('appThemeMode');
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+          setThemeMode(savedTheme);
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    hydrateTheme();
+  }, []);
+
+  const setAppThemeMode = async (nextMode) => {
+    setThemeMode(nextMode);
+    await AsyncStorage.setItem('appThemeMode', nextMode);
+  };
 
   useEffect(() => {
     const hydrateSession = async () => {
@@ -310,18 +411,32 @@ export default function App() {
 
   if (!bootState.ready) return null;
 
+  const navigationTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      background: themeMode === 'dark' ? '#0F172A' : '#F2F2F7',
+      card: themeMode === 'dark' ? '#0B1220' : '#F9F9FB',
+      border: themeMode === 'dark' ? '#1F2937' : '#E5E5EA',
+      text: themeMode === 'dark' ? '#F8FAFC' : '#1C1C1E',
+      primary: themeMode === 'dark' ? '#60A5FA' : '#2563EB',
+    },
+  };
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator 
-        initialRouteName={bootState.initialRoute}
-        screenOptions={{ headerShown: false }}
-      >
-        <Stack.Screen name="Login" component={LoginScreen} />
-        {/* Pass the routing to the unified Tab containers */}
-        <Stack.Screen name="ParentRoot" component={ParentTabs} initialParams={{ email: bootState.email }} />
-        <Stack.Screen name="AdminRoot" component={AdminTabs} initialParams={{ email: bootState.email }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ThemeProvider value={{ themeMode, setAppThemeMode }}>
+      <NavigationContainer theme={navigationTheme}>
+        <Stack.Navigator 
+          initialRouteName={bootState.initialRoute}
+          screenOptions={{ headerShown: false }}
+        >
+          <Stack.Screen name="Login" component={LoginScreen} />
+          {/* Pass the routing to the unified Tab containers */}
+          <Stack.Screen name="ParentRoot" component={ParentTabs} initialParams={{ email: bootState.email }} />
+          <Stack.Screen name="AdminRoot" component={AdminTabs} initialParams={{ email: bootState.email }} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ThemeProvider>
   );
 }
 

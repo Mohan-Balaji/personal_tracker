@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useState } from 'react';
+import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -10,14 +11,17 @@ const ADMIN_EMAIL = "bmohanbalaji1976@gmail.com";
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email) return;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    await AsyncStorage.setItem('sessionEmail', normalizedEmail);
     
     // Check if the entered Google email is the admin
-    if (email.toLowerCase().trim() === ADMIN_EMAIL) {
-      navigation.replace('AdminRoot', { email: email.toLowerCase().trim() });
+    if (normalizedEmail === ADMIN_EMAIL) {
+      navigation.replace('AdminRoot', { email: normalizedEmail });
     } else {
-      navigation.replace('ParentRoot', { email: email.toLowerCase().trim() });
+      navigation.replace('ParentRoot', { email: normalizedEmail });
     }
   };
 
@@ -68,7 +72,7 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B0B0F',
   },
   backgroundCircle: {
     position: 'absolute',
@@ -77,8 +81,8 @@ const styles = StyleSheet.create({
     width: width * 1.2,
     height: width * 1.2,
     borderRadius: width * 0.6,
-    backgroundColor: '#1E293B',
-    opacity: 0.5,
+    backgroundColor: '#171A24',
+    opacity: 0.7,
   },
   backgroundCircleSmall: {
     position: 'absolute',
@@ -87,8 +91,8 @@ const styles = StyleSheet.create({
     width: width * 0.8,
     height: width * 0.8,
     borderRadius: width * 0.4,
-    backgroundColor: '#3B82F6',
-    opacity: 0.1,
+    backgroundColor: '#1D4ED8',
+    opacity: 0.15,
   },
   content: {
     flex: 1,
@@ -102,7 +106,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 52,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     letterSpacing: 2,
     marginBottom: 8,
   },
@@ -113,16 +117,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   loginCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111827',
     padding: 24,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#1F2937',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 4,
   },
   cardTitle: {
     fontSize: 20,
@@ -136,18 +140,18 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
     borderRadius: 12,
     padding: 16,
-    color: '#FFF',
+    color: '#FFFFFF',
     fontSize: 16,
     marginBottom: 20,
   },
   googleButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#FFF',
+    shadowColor: '#007AFF',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -158,16 +162,16 @@ const styles = StyleSheet.create({
   googleIcon: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#4285F4',
+    color: '#FFFFFF',
     marginRight: 10,
   },
   buttonText: {
-    color: '#333333',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
   infoText: {
-    color: '#64748B',
+    color: '#94A3B8',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 20,

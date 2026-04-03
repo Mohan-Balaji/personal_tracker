@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, KeyboardAvoidingView, Linking, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc } from 'firebase/firestore';
 import { sendPushToOthers } from '../utils/push-notifications';
+import { useAppTheme } from '../utils/theme-context';
 
 export default function ChatScreen({ route }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const insets = useSafeAreaInsets();
+  const { themeMode } = useAppTheme();
   
   const flatListRef = useRef(null);
   
@@ -62,6 +65,27 @@ export default function ChatScreen({ route }) {
     return () => unsub();
   }, []);
 
+  const isDark = themeMode === 'dark';
+
+  const theme = {
+    bg: isDark ? '#0F172A' : '#F3F4F6',
+    headerBg: isDark ? '#111827' : '#FFFFFF',
+    headerBorder: isDark ? '#1F2937' : '#D1D5DB',
+    headerText: isDark ? '#F8FAFC' : '#111827',
+    panelBg: isDark ? '#111827' : '#FFFFFF',
+    panelBorder: isDark ? '#1F2937' : '#D1D5DB',
+    dateBg: isDark ? 'rgba(51, 65, 85, 0.7)' : '#E5E7EB',
+    dateBorder: isDark ? '#334155' : '#D1D5DB',
+    dateText: isDark ? '#E2E8F0' : '#4B5563',
+    theirBubbleBg: isDark ? '#1E293B' : '#FFFFFF',
+    theirBubbleBorder: isDark ? '#334155' : '#D1D5DB',
+    theirText: isDark ? '#F8FAFC' : '#111827',
+    theirTime: isDark ? '#94A3B8' : '#6B7280',
+    inputBg: isDark ? '#0F172A' : '#F9FAFB',
+    inputBorder: isDark ? '#334155' : '#D1D5DB',
+    inputText: isDark ? '#FFFFFF' : '#111827',
+  };
+
   const sendMessage = async () => {
     if (newMessage.trim() === '') return;
     const textToSend = newMessage.trim();
@@ -81,6 +105,10 @@ export default function ChatScreen({ route }) {
     });
     
     setNewMessage('');
+
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
   };
 
   const deleteMessage = (id) => {
@@ -98,18 +126,33 @@ export default function ChatScreen({ route }) {
     );
   };
 
+  const openWhatsApp = async () => {
+    const appUrl = 'whatsapp://send?phone=918925236216';
+    const webUrl = 'https://wa.me/918925236216';
+    try {
+      const canOpen = await Linking.canOpenURL(appUrl);
+      if (canOpen) {
+        await Linking.openURL(appUrl);
+      } else {
+        await Linking.openURL(webUrl);
+      }
+    } catch (err) {
+      Alert.alert('WhatsApp', 'Unable to open WhatsApp right now.');
+    }
+  };
+
   const getNameColor = (name) => {
     if (name === 'Mohan') return '#F97316'; // Orange
     if (name === 'Kalaiselvi') return '#F43F5E'; // Red/Pink (Rose)
-    if (name === 'Baskar') return '#FBBF24'; // Manjatha (Bright Yellow)
+    if (name === 'Baskar') return '#D97706'; // Muted amber for better text contrast
     return '#3B82F6';
   };
 
   const renderMessage = ({ item }) => {
     if (item.isDate) {
       return (
-        <View style={styles.dateSeparator}>
-          <Text style={styles.dateSeparatorText}>{item.text}</Text>
+        <View style={[styles.dateSeparator, { backgroundColor: theme.dateBg, borderColor: theme.dateBorder }]}>
+          <Text style={[styles.dateSeparatorText, { color: theme.dateText }]}>{item.text}</Text>
         </View>
       );
     }
@@ -126,48 +169,61 @@ export default function ChatScreen({ route }) {
         activeOpacity={0.8}
         onLongPress={isMe ? () => deleteMessage(item.id) : null}
         delayLongPress={400}
-        style={[styles.messageBubble, isMe ? [styles.myMessage, { backgroundColor: myBubbleColor }] : styles.theirMessage]}
+        style={[
+          styles.messageBubble,
+          isMe
+            ? [styles.myMessage, { backgroundColor: myBubbleColor }]
+            : [styles.theirMessage, { backgroundColor: theme.theirBubbleBg, borderColor: theme.theirBubbleBorder }],
+        ]}
       >
         {!isMe && <Text style={[styles.senderName, { color: getNameColor(item.sender) }]}>{item.sender}</Text>}
-        <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
+        <Text style={[styles.messageText, isMe ? styles.myMessageText : [styles.theirMessageText, { color: theme.theirText }]]}>
           {item.text}
         </Text>
-        <Text style={[styles.timestampText, isMe ? styles.myTimestampText : styles.theirTimestampText]}>
+        <Text style={[styles.timestampText, isMe ? styles.myTimestampText : [styles.theirTimestampText, { color: theme.theirTime }]]}>
           {timeString}
         </Text>
       </TouchableOpacity>
     );
   };
 
+  const inputDockPadding = Math.max(insets.bottom, 10);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Family Chat - {senderName}</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}> 
+      <View style={[styles.header, { backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}> 
+        <Text style={[styles.headerTitle, { color: theme.headerText }]}>Family Chat - {senderName}</Text>
+        <TouchableOpacity style={styles.whatsappTopBtn} onPress={openWhatsApp}>
+          <Text style={styles.whatsappTopBtnText}>WhatsApp</Text>
+        </TouchableOpacity>
       </View>
       
       <KeyboardAvoidingView 
         style={styles.contentWrapper} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 10}
       >
         <FlatList
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.chatList}
-          // To automatically start at the bottom, we wait for layout
-          onContentSizeChange={(_, h) => flatListRef.current?.scrollToOffset({ offset: h, animated: true })}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
           ref={flatListRef}
         />
 
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: inputDockPadding, backgroundColor: theme.panelBg, borderTopColor: theme.panelBorder }]}> 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.inputText }]}
             placeholder="Type a message..."
-            placeholderTextColor="#64748B"
+            placeholderTextColor={isDark ? '#64748B' : '#8E8E93'}
             value={newMessage}
             onChangeText={setNewMessage}
             onSubmitEditing={sendMessage}
+            returnKeyType="send"
+            multiline
+            textAlignVertical="center"
           />
           <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
             <Text style={styles.sendIcon}>➤</Text>
@@ -179,30 +235,75 @@ export default function ChatScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A', alignItems: 'center' },
-  header: { width: '100%', padding: 20, backgroundColor: '#1E293B', borderBottomWidth: 1, borderBottomColor: '#334155', alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#FFFFFF' },
+  container: { flex: 1, alignItems: 'center' },
+  header: {
+    width: '100%',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  headerTitle: { fontSize: 19, fontWeight: '800', letterSpacing: 0.2 },
+  whatsappTopBtn: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 14, backgroundColor: '#25D366' },
+  whatsappTopBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   
-  contentWrapper: { flex: 1, width: '100%', maxWidth: 800 },
-  chatList: { padding: 16, paddingBottom: 30 },
-  messageBubble: { maxWidth: '80%', padding: 14, borderRadius: 20, marginBottom: 12 },
-  myMessage: { alignSelf: 'flex-end', borderBottomRightRadius: 4 },
-  theirMessage: { alignSelf: 'flex-start', backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', borderBottomLeftRadius: 4 },
+  contentWrapper: { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center' },
+  chatList: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 18 },
+  messageBubble: { maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, marginBottom: 10 },
+  myMessage: { alignSelf: 'flex-end', borderBottomRightRadius: 6 },
+  theirMessage: { alignSelf: 'flex-start', borderWidth: 1, borderBottomLeftRadius: 6 },
   
-  dateSeparator: { alignSelf: 'center', backgroundColor: 'rgba(51, 65, 85, 0.7)', paddingVertical: 6, paddingHorizontal: 16, borderRadius: 16, marginVertical: 16 },
-  dateSeparatorText: { color: '#F8FAFC', fontSize: 12, fontWeight: 'bold' },
+  dateSeparator: {
+    alignSelf: 'center',
+    borderWidth: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    marginVertical: 14
+  },
+  dateSeparatorText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 
-  senderName: { fontSize: 12, marginBottom: 4, fontWeight: 'bold' },
-  messageText: { fontSize: 16 },
+  senderName: { fontSize: 11, marginBottom: 4, fontWeight: '700' },
+  messageText: { fontSize: 16, lineHeight: 21 },
   myMessageText: { color: '#FFFFFF' },
-  theirMessageText: { color: '#F8FAFC' },
+  theirMessageText: {},
   
-  timestampText: { fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  myTimestampText: { color: 'rgba(255, 255, 255, 0.7)' },
-  theirTimestampText: { color: '#94A3B8' },
-  
-  inputContainer: { flexDirection: 'row', padding: 16, backgroundColor: '#1E293B', borderTopWidth: 1, borderTopColor: '#334155' },
-  input: { flex: 1, backgroundColor: '#0F172A', borderRadius: 24, paddingHorizontal: 20, paddingVertical: 12, color: '#FFF', fontSize: 16, borderWidth: 1, borderColor: '#334155' },
-  sendBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', marginLeft: 12 },
-  sendIcon: { fontSize: 20, color: '#FFF' }
+  timestampText: { fontSize: 10, marginTop: 5, alignSelf: 'flex-end', letterSpacing: 0.2 },
+  myTimestampText: { color: 'rgba(241, 247, 255, 0.85)' },
+  theirTimestampText: {},
+
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+  },
+  input: {
+    flex: 1,
+    borderRadius: 26,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    maxHeight: 120
+  },
+  sendBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#2D7DFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+    marginBottom: 1,
+    shadowColor: '#2D7DFF',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6
+  },
+  sendIcon: { fontSize: 20, color: '#F4F8FF', marginLeft: 1 }
 });

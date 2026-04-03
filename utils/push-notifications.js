@@ -1,7 +1,7 @@
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { Platform } from 'react-native';
 
 async function ensureNotificationPermissions() {
   if (Platform.OS === 'android') {
