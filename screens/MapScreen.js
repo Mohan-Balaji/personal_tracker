@@ -18,6 +18,14 @@ export default function MapScreen({ route }) {
   const isDark = themeMode === 'dark';
   const isTablet = width >= 768;
 
+  const normalizeCoordinate = (value) => {
+    if (!value) return null;
+    const latitude = Number(value.latitude);
+    const longitude = Number(value.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { latitude, longitude };
+  };
+
   useEffect(() => {
     const todayDate = new Date().toISOString().split('T')[0];
     const ADMIN_DOC = `mohan_${todayDate}`;
@@ -25,11 +33,9 @@ export default function MapScreen({ route }) {
     const unsub = onSnapshot(doc(db, "users", ADMIN_DOC), (docSnapshot) => {
       if (docSnapshot.exists()) {
         const data = docSnapshot.data();
-        if (isAdmin && data.adminLiveLocation) {
-          setLiveLocation(data.adminLiveLocation);
-        } else if (!isAdmin && data.liveLocation) {
-          setLiveLocation(data.liveLocation);
-        }
+        const incomingLocation = isAdmin ? data.adminLiveLocation : data.liveLocation;
+        const normalizedLocation = normalizeCoordinate(incomingLocation);
+        if (normalizedLocation) setLiveLocation(normalizedLocation);
         if (data.locationSharing !== undefined) setIsLocationSharing(data.locationSharing);
       }
     });
@@ -39,7 +45,7 @@ export default function MapScreen({ route }) {
 
   useEffect(() => {
     // Snap camera to live location safely ONLY on first load (to avoid disrupting user panning later)
-    if (liveLocation && mapRef.current && !hasCentered) {
+    if (isValidCoordinate(liveLocation) && mapRef.current && !hasCentered) {
       mapRef.current.animateToRegion({
         latitude: liveLocation.latitude,
         longitude: liveLocation.longitude,
@@ -73,7 +79,7 @@ export default function MapScreen({ route }) {
     : { latitude: 12.9716, longitude: 77.5946 };
 
   const handleRecenter = () => {
-    if (mapRef.current && liveLocation) {
+    if (mapRef.current && isValidCoordinate(liveLocation)) {
       mapRef.current.animateToRegion({
         latitude: liveLocation.latitude,
         longitude: liveLocation.longitude,

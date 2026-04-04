@@ -1,12 +1,12 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Alert, Dimensions, Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
-import { formatCompletedTime, getTimelineDateKey } from '../utils/timeline-date';
 import { useAppTheme } from '../utils/theme-context';
+import { getTimelineDateKey } from '../utils/timeline-date';
 
 const { width } = Dimensions.get('window');
 

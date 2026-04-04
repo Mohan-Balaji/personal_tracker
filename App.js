@@ -28,12 +28,28 @@ import LoginScreen from './screens/LoginScreen';
 import MapScreen from './screens/MapScreen';
 import TimelineScreen from './screens/TimelineScreen';
 import { registerPushToken } from './utils/push-notifications';
-import { getTimelineDateKey } from './utils/timeline-date';
 import { ThemeProvider, useAppTheme } from './utils/theme-context';
+import { getTimelineDateKey } from './utils/timeline-date';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 const ADMIN_EMAIL = 'bmohanbalaji1976@gmail.com';
+const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
+const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
+
+if (!TaskManager.isTaskDefined(BACKGROUND_NOTIFICATION_TASK)) {
+  TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, ({ data, error }) => {
+    if (error) {
+      console.warn('Background notification task error:', error);
+      return;
+    }
+
+    // Keep task lightweight: OS already renders push notifications.
+    if (data?.notification) {
+      return;
+    }
+  });
+}
 
 // Universal Unread Hook
 function useUnreadMessages(email) {
@@ -409,6 +425,29 @@ export default function App() {
     hydrateSession();
   }, []);
 
+  useEffect(() => {
+    const enableBackgroundNotifications = async () => {
+      try {
+        const available = await TaskManager.isAvailableAsync();
+        if (!available) return;
+        await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
+      } catch (err) {
+        const message = String(err?.message || '').toLowerCase();
+        if (!message.includes('already')) {
+          console.warn('Notification background task registration failed:', err);
+        }
+      }
+    };
+
+    enableBackgroundNotifications();
+  }, []);
+
+  useEffect(() => {
+    if (!bootState.ready || !bootState.email) return;
+    const role = bootState.email === ADMIN_EMAIL ? 'admin' : 'parent';
+    registerPushToken(db, bootState.email, role);
+  }, [bootState.ready, bootState.email]);
+
   if (!bootState.ready) return null;
 
   const navigationTheme = {
@@ -441,33 +480,33 @@ export default function App() {
 }
 
 // OS-Level Background Location Engine
-const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
-
-TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
-  if (error) {
-    console.error("Background Location Sync Failed:", error);
-    return;
-  }
-  if (data) {
-    const { locations } = data;
-    const loc = locations[0];
-    if (loc) {
-      // Find today's document natively in the background thread
-      const todayDate = new Date().toISOString().split('T')[0];
-      const ADMIN_DOC = `mohan_${todayDate}`;
-      try {
-        const sharingState = await AsyncStorage.getItem('isSharingLocation');
-        const updateData = {
-           adminLiveLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
-           timestamp: new Date().toISOString()
-        };
-        // Explicitly duplicate coordinates to the Public payload strictly if Privacy is inactive!
-        if (sharingState !== 'false') {
-           updateData.liveLocation = updateData.adminLiveLocation;
-        }
-
-        await setDoc(doc(db, "users", ADMIN_DOC), updateData, { merge: true });
-      } catch (err) {}
+if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
+  TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
+    if (error) {
+      console.error('Background Location Sync Failed:', error);
+      return;
     }
-  }
-});
+    if (data) {
+      const { locations } = data;
+      const loc = locations[0];
+      if (loc) {
+        // Find today's document natively in the background thread
+        const todayDate = new Date().toISOString().split('T')[0];
+        const ADMIN_DOC = `mohan_${todayDate}`;
+        try {
+          const sharingState = await AsyncStorage.getItem('isSharingLocation');
+          const updateData = {
+            adminLiveLocation: { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+            timestamp: new Date().toISOString()
+          };
+          // Explicitly duplicate coordinates to the Public payload strictly if Privacy is inactive!
+          if (sharingState !== 'false') {
+            updateData.liveLocation = updateData.adminLiveLocation;
+          }
+
+          await setDoc(doc(db, 'users', ADMIN_DOC), updateData, { merge: true });
+        } catch (err) {}
+      }
+    }
+  });
+}

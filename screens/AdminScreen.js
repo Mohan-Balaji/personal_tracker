@@ -12,8 +12,8 @@ import { Alert, Modal, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
 import { sendPushToRole } from '../utils/push-notifications';
-import { formatCompletedTime, getTimelineDateKey } from '../utils/timeline-date';
 import { useAppTheme } from '../utils/theme-context';
+import { formatCompletedTime, getTimelineDateKey } from '../utils/timeline-date';
 
 const CHECKPOINTS = [
   { id: 1, title: "Woke up", expected: "6:30 AM", icon: "🌅" },
@@ -26,6 +26,8 @@ const CHECKPOINTS = [
   { id: 8, title: "Reached home", expected: "7:15 PM", icon: "🏠" },
   { id: 9, title: "Sleep", expected: "10:30 PM", icon: "🌙" },
 ];
+
+const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
 
 export default function AdminScreen({ navigation }) {
   const [logs, setLogs] = useState([]);
@@ -100,10 +102,14 @@ export default function AdminScreen({ navigation }) {
     // Aggressive un-blockable 3-second heartbeat
     const timer = setInterval(syncHardware, 3000);
 
-    const BACKGROUND_LOCATION_TASK = 'BACKGROUND_LOCATION_TASK';
-
     const startLocationSync = async () => {
       try {
+        const taskManagerAvailable = await TaskManager.isAvailableAsync();
+        if (!taskManagerAvailable) {
+          console.warn('TaskManager is not available on this device/build.');
+          return;
+        }
+
         // 1. Get foreground permission first required by Android 11+
         let fStatus = await Location.requestForegroundPermissionsAsync();
         if (fStatus.status !== 'granted') {
@@ -115,6 +121,11 @@ export default function AdminScreen({ navigation }) {
         let bStatus = await Location.requestBackgroundPermissionsAsync();
         if (bStatus.status !== 'granted') {
           console.error('Background location permission denied');
+          return;
+        }
+
+        const hasStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        if (hasStarted) {
           return;
         }
 
