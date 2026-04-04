@@ -1,7 +1,7 @@
+import Constants from 'expo-constants';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../firebaseConfig';
 import { useAppTheme } from '../utils/theme-context';
@@ -17,6 +17,12 @@ export default function MapScreen({ route }) {
   const isAdmin = route?.params?.isAdmin || false;
   const isDark = themeMode === 'dark';
   const isTablet = width >= 768;
+  const googleMapsApiKey = Constants.expoConfig?.android?.config?.googleMaps?.apiKey;
+  const canRenderNativeMap = Platform.OS !== 'android' || !!googleMapsApiKey;
+  const MapModules = canRenderNativeMap ? require('react-native-maps') : null;
+  const MapView = MapModules?.default;
+  const Marker = MapModules?.Marker;
+  const PROVIDER_DEFAULT = MapModules?.PROVIDER_DEFAULT;
 
   const normalizeCoordinate = (value) => {
     if (!value) return null;
@@ -99,11 +105,23 @@ export default function MapScreen({ route }) {
       </View>
 
       <View style={styles.mapContainer}>
-        {Platform.OS === 'web' ? (
+        {Platform.OS === 'web' || !canRenderNativeMap ? (
           <View style={[styles.map, styles.webPlaceholder, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}> 
             <Text style={{ fontSize: 60 }}>📍</Text>
-            <Text style={[styles.webTitle, { color: isDark ? '#F8FAFC' : '#111827' }]}>Interactive Map Disabled on Web</Text>
-            <Text style={[styles.webSubtitle, { color: isDark ? '#94A3B8' : '#6B7280' }]}>Please use the mobile app to view Mohan's real-time Google Map.</Text>
+            <Text style={[styles.webTitle, { color: isDark ? '#F8FAFC' : '#111827' }]}>{Platform.OS === 'web' ? 'Interactive Map Disabled on Web' : 'Map Key Missing'}</Text>
+            <Text style={[styles.webSubtitle, { color: isDark ? '#94A3B8' : '#6B7280' }]}>
+              {Platform.OS === 'web'
+                ? "Please use the mobile app to view Mohan's real-time Google Map."
+                : 'Add a Google Maps API key in app.json to render the live map in APK.'}
+            </Text>
+            <View style={[styles.fallbackCard, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E5E7EB' }]}> 
+              <Text style={[styles.fallbackLabel, { color: isDark ? '#E2E8F0' : '#111827' }]}>Live Location</Text>
+              <Text style={[styles.fallbackValue, { color: isDark ? '#F8FAFC' : '#1D4ED8' }]}>
+                {isValidCoordinate(liveLocation)
+                  ? `${liveLocation.latitude.toFixed(5)}, ${liveLocation.longitude.toFixed(5)}`
+                  : 'Waiting for location update'}
+              </Text>
+            </View>
           </View>
         ) : (
           <View style={styles.mapWrap}>
@@ -112,19 +130,21 @@ export default function MapScreen({ route }) {
                 <Text style={styles.adminPrivacyWarningText}>⚠️ Privacy mode is ON. Parents see your Last Known Region.</Text>
               </View>
             )}
-            <MapView 
-              ref={mapRef}
-              style={styles.map}
-              initialRegion={MAP_REGION}
-              provider={PROVIDER_DEFAULT}
-              showsUserLocation={false} 
-            >
-              <Marker coordinate={MARKER_COORDINATE} title={isAdmin ? "Me" : "Last Known Location"} description={(!isLocationSharing && !isAdmin) ? "Paused" : "Current Location"}>
-                <View style={styles.customMarker}>
-                  <Text style={styles.markerEmoji}>🚶</Text>
-                </View>
-              </Marker>
-            </MapView>
+            {MapView ? (
+              <MapView 
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={MAP_REGION}
+                provider={PROVIDER_DEFAULT}
+                showsUserLocation={false} 
+              >
+                <Marker coordinate={MARKER_COORDINATE} title={isAdmin ? "Me" : "Last Known Location"} description={(!isLocationSharing && !isAdmin) ? "Paused" : "Current Location"}>
+                  <View style={styles.customMarker}>
+                    <Text style={styles.markerEmoji}>🚶</Text>
+                  </View>
+                </Marker>
+              </MapView>
+            ) : null}
 
             {/* Recenter Floating Button */}
             <TouchableOpacity style={[styles.recenterBtn, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#D1D5DB' }]} onPress={handleRecenter}>
@@ -149,6 +169,9 @@ const styles = StyleSheet.create({
   webPlaceholder: { justifyContent: 'center', alignItems: 'center', padding: 24, flex: 1 },
   webTitle: { fontSize: 20, marginTop: 16, fontWeight: 'bold' },
   webSubtitle: { fontSize: 14, marginTop: 8, textAlign: 'center' },
+  fallbackCard: { marginTop: 18, width: '100%', borderWidth: 1, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 },
+  fallbackLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  fallbackValue: { fontSize: 15, fontWeight: '700' },
   customMarker: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#3B82F6', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
   markerEmoji: { fontSize: 24 },
 
